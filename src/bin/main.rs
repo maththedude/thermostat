@@ -13,7 +13,7 @@ use esp_hal::{
     main,
     time::{Duration, Instant},
 };
-use thermostat::{OFF, ON, state::*};
+use thermostat::{OFF, ON, thermostat::*};
 use {esp_backtrace as _, esp_println as _};
 
 extern crate alloc;
@@ -34,7 +34,7 @@ fn main() -> ! {
     esp_alloc::heap_allocator!(#[esp_hal::ram(reclaimed)] size: 65536);
     esp_alloc::heap_allocator!(size: 64 * 1024); //TODO: Added by esp-gen with "COEX needs more RAM - so we've added some more." Investigate.
 
-    let mut thermostat = State {
+    let mut thermostat = Thermostat {
         heat: OFF,
         cool: OFF,
         fan: OFF,

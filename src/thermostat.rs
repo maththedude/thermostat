@@ -2,7 +2,7 @@ use esp_hal::{gpio::Output, time::Instant};
 
 use crate::{OFF, ON, helpers::set_relay_state};
 
-pub struct State<'a> {
+pub struct Thermostat<'a> {
     pub heat: bool,
     pub cool: bool,
     pub fan: bool,
@@ -34,13 +34,13 @@ pub enum FanMode {
     Auto,
 }
 
-impl<'a> State<'a> {
+impl<'a> Thermostat<'a> {
     pub fn turn_heat_on(&mut self) {
         set_relay_state(&mut self.heat_pin, ON);
     }
 }
 
-impl<'a> State<'a> {
+impl<'a> Thermostat<'a> {
     pub fn turn_heat_off(&mut self) {
         set_relay_state(&mut self.heat_pin, OFF);
     }
