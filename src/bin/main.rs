@@ -13,6 +13,7 @@ use esp_hal::{
     main,
     time::{Duration, Instant},
 };
+use thermostat::{OFF, ON, state::*};
 use {esp_backtrace as _, esp_println as _};
 
 extern crate alloc;
@@ -33,26 +34,31 @@ fn main() -> ! {
     esp_alloc::heap_allocator!(#[esp_hal::ram(reclaimed)] size: 65536);
     esp_alloc::heap_allocator!(size: 64 * 1024); //TODO: Added by esp-gen with "COEX needs more RAM - so we've added some more." Investigate.
 
-    // Configure GPIO8 as output:
-    let mut pin8 = Output::new(peripherals.GPIO8, Level::Low, OutputConfig::default());
+    let mut thermostat = State {
+        heat: OFF,
+        cool: OFF,
+        fan: OFF,
+        fan_mode: FanMode::Off,
+        temp: 70,
+        set_point_low: 70,
+        set_point_high: 70,
+        mode: Mode::Off,
+        backlight: ON,
+        backlight_since: Instant::now(),
+        heat_pin: Output::new(peripherals.GPIO8, Level::Low, OutputConfig::default()),
+        cool_pin: Output::new(peripherals.GPIO3, Level::Low, OutputConfig::default()),
+        fan_pin: Output::new(peripherals.GPIO2, Level::Low, OutputConfig::default()),
+    };
 
     loop {
         info!("Opening relay");
-        set_relay_state(&mut pin8, false);
+        thermostat.turn_heat_off();
         let mut t0 = Instant::now();
         while t0.elapsed() < Duration::from_millis(1000) {}
 
         info!("Closing relay");
-        set_relay_state(&mut pin8, true);
+        thermostat.turn_heat_on();
         t0 = Instant::now();
         while t0.elapsed() < Duration::from_millis(1000) {}
-    }
-}
-
-fn set_relay_state(relay_pin: &mut Output, close: bool) {
-    if close {
-        relay_pin.set_high();
-    } else {
-        relay_pin.set_low();
     }
 }
