@@ -1606,6 +1606,7 @@ dependencies = [
  "bleps",
  "critical-section",
  "defmt 1.0.1",
+ "embedded-hal 1.0.0",
  "embedded-io 0.7.1",
  "esp-alloc",
  "esp-backtrace",

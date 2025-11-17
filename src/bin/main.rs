@@ -8,12 +8,14 @@
 
 use defmt::*;
 use esp_hal::{
+    i2c::master::{Config, I2c},
     clock::CpuClock,
     gpio::{Level, Output, OutputConfig},
     main,
     time::{Duration, Instant},
+    delay::Delay,
 };
-use thermostat::{OFF, ON, thermostat::*};
+use thermostat::{OFF, ON, grove_lcd_rgb::GroveLcdRgb, thermostat::*};
 use {esp_backtrace as _, esp_println as _};
 
 extern crate alloc;
@@ -49,6 +51,27 @@ fn main() -> ! {
         cool_pin: Output::new(peripherals.GPIO3, Level::Low, OutputConfig::default()),
         fan_pin: Output::new(peripherals.GPIO2, Level::Low, OutputConfig::default()),
     };
+
+    let sda = peripherals.GPIO6;
+    let scl = peripherals.GPIO7;
+
+     // Build I2C (same signature as before)
+    let i2c = I2c::new(peripherals.I2C0, Config::default()).unwrap().with_sda(sda).with_scl(scl);
+
+    // Create a Delay using the clocks
+    let delay = Delay::new();
+
+    // Create driver (your embedded-hal version)
+    let mut lcd = GroveLcdRgb::new(i2c, delay).unwrap();
+
+    // Use it
+    lcd.set_rgb(0, 120, 255).unwrap();
+    lcd.set_cursor(0, 0).unwrap();
+    lcd.print("ESP32-C6 Rust").unwrap();
+
+    lcd.set_cursor(0, 1).unwrap();
+    lcd.print("HAL 1.0.x OK").unwrap();
+
 
     loop {
         info!("Opening relay");
