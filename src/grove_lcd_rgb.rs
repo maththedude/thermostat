@@ -26,7 +26,7 @@ where
 
     fn init(&mut self) -> Result<(), E> {
         // --- RGB controller initialization ---
-        //self.rgb_write(0x00, 0x00)?; // mode1
+        self.rgb_write(0x00, 0x00)?; // mode1
         self.rgb_write(0x01, 0x00)?; // mode2
         self.rgb_write(0x08, 0xAA)?; // LED output on
 
