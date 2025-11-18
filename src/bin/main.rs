@@ -10,13 +10,14 @@ use defmt::*;
 use esp_hal::{
     i2c::master::{Config, I2c},
     clock::CpuClock,
-    gpio::{Level, Output, OutputConfig},
+    gpio::{Io, Level, Output, OutputConfig},
     main,
     time::{Duration, Instant},
     delay::Delay,
 };
-use thermostat::{OFF, ON, grove_lcd_rgb::GroveLcdRgb, thermostat::*};
+use thermostat::{OFF, ON, thermostat::*};
 use {esp_backtrace as _, esp_println as _};
+use grove_lcd_rgb::GroveLcd;
 
 extern crate alloc;
 
@@ -55,22 +56,104 @@ fn main() -> ! {
     let sda = peripherals.GPIO6;
     let scl = peripherals.GPIO7;
 
-     // Build I2C (same signature as before)
-    let i2c = I2c::new(peripherals.I2C0, Config::default()).unwrap().with_sda(sda).with_scl(scl);
+    // Create I2C peripheral
+    // Adjust pin numbers based on your wiring
+    let mut i2c = I2c::new(peripherals.I2C0, Config::default())
+        .unwrap()
+        .with_sda(sda)  // SDA
+        .with_scl(scl); // SCL
 
-    // Create a Delay using the clocks
+    // Create a delay provider
     let delay = Delay::new();
+    
+    delay.delay_millis(100);
+    
+    // Step 2: Scan I2C bus
+    println!("\nStep 2: Scanning I2C bus...");
+    let mut lcd_found = false;
+    let mut rgb_found = false;
+    
+    for addr in 0x00..=0x7F {
+        if i2c.write(addr, &[]).is_ok() {
+            println!("  ✓ Found device at 0x{:02X}", addr);
+            if addr == 0x3E {
+                lcd_found = true;
+                println!("    → LCD text controller detected");
+            }
+            if addr == 0x62 {
+                rgb_found = true;
+                println!("    → RGB backlight controller detected (v4)");
+            }
+            if addr == 0x30 {
+                rgb_found = true;
+                println!("    → RGB backlight controller detected (v5)");
+            }
+        }
+    }
+    
+    if !lcd_found {
+        println!("\n  ✗ ERROR: LCD not found at address 0x3E");
+        println!("  Check:");
+        println!("    - Is the LCD powered? (needs 3.3V or 5V)");
+        println!("    - Are SDA and SCL connected correctly?");
+        println!("    - Do you have pull-up resistors? (usually built into Grove modules)");
+    }
+    
+    if !rgb_found {
+        println!("\n  ⚠ WARNING: RGB backlight controller not found");
+        println!("  The display may work but backlight might not");
+    }
 
-    // Create driver (your embedded-hal version)
-    let mut lcd = GroveLcdRgb::new(i2c, delay).unwrap();
+    // Step 3: Try basic LCD communication
+    println!("\nStep 3: Testing LCD communication...");
+    
+    // Try to send a command to the LCD (function set)
+    let cmd_data = [0x80, 0x38]; // Function set: 8-bit, 2 lines, 5x8 dots
+    match i2c.write(0x3E, &cmd_data) {
+        Ok(_) => println!("  ✓ Successfully sent command to LCD"),
+        Err(e) => {
+            println!("  ✗ Failed to send command: {:?}", e);
+            loop {}
+        }
+    }
 
-    // Use it
-    lcd.set_rgb(0, 120, 255).unwrap();
-    lcd.set_cursor(0, 0).unwrap();
-    lcd.print("ESP32-C6 Rust").unwrap();
+    // // Step 4: Test RGB controller
+    // if rgb_found {
+    //     println!("\nStep 4: Testing RGB backlight...");
+        
+    //     // Try to set RGB to red
+    //     let rgb_addr = if i2c.write(0x30, &[]).is_ok() { 0x30 } else { 0x62 };
+        
+    //     match i2c.write(rgb_addr, &[0x04, 0xFF]) {  // Red register
+    //         Ok(_) => println!("  ✓ Successfully set red channel"),
+    //         Err(e) => println!("  ⚠ Failed to set red: {:?}", e),
+    //     }
+        
+    //     match i2c.write(rgb_addr, &[0x03, 0x00]) {  // Green register
+    //         Ok(_) => println!("  ✓ Successfully set green channel"),
+    //         Err(e) => println!("  ⚠ Failed to set green: {:?}", e),
+    //     }
+        
+    //     match i2c.write(rgb_addr, &[0x02, 0x00]) {  // Blue register
+    //         Ok(_) => println!("  ✓ Successfully set blue channel"),
+    //         Err(e) => println!("  ⚠ Failed to set blue: {:?}", e),
+    //     }
+        
+    //     println!("  → Backlight should now be RED");
+    // }
 
-    lcd.set_cursor(0, 1).unwrap();
-    lcd.print("HAL 1.0.x OK").unwrap();
+    // Step 5: Send a character to the LCD
+    println!("\nStep 5: Writing character to LCD...");
+    let char_data = [0x40, b'H']; // Data mode, character 'H'
+    match i2c.write(0x3E, &char_data) {
+        Ok(_) => {
+            println!("  ✓ Successfully wrote character 'H' to LCD");
+            println!("  → You should see 'H' on the display");
+        },
+        Err(e) => {
+            println!("  ✗ Failed to write character: {:?}", e);
+        }
+    }
 
 
     loop {
