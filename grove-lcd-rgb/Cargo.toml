@@ -11,7 +11,6 @@ categories = ["embedded", "hardware-support", "no-std"]
 
 [dependencies]
 embedded-hal = "1.0"
-defmt                  = "1.0.1"
 
 [dev-dependencies]
 # Add your target-specific dependencies for examples here
