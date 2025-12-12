@@ -8,11 +8,16 @@
 
 use defmt::*;
 use esp_hal::{
-    clock::CpuClock, delay::Delay, gpio::{Level, Output, OutputConfig}, i2c::master::{Config, I2c}, main, time::{Duration, Instant}
+    clock::CpuClock,
+    delay::Delay,
+    gpio::{Level, Output, OutputConfig},
+    i2c::master::{Config, I2c},
+    main,
+    time::{Duration, Instant},
 };
+use grove_lcd_rgb::GroveLcd;
 use thermostat::{OFF, ON, thermostat::*};
 use {esp_backtrace as _, esp_println as _};
-use grove_lcd_rgb::GroveLcd;
 
 extern crate alloc;
 
@@ -56,26 +61,25 @@ fn main() -> ! {
     // Adjust pin numbers based on your wiring
     let i2c = I2c::new(peripherals.I2C0, Config::default())
         .unwrap()
-        .with_sda(sda)  // SDA
+        .with_sda(sda) // SDA
         .with_scl(scl); // SCL
 
     // Create LCD instance
     let mut lcd = GroveLcd::new(i2c, delay);
-    
+
     // Initialize the LCD (16 columns, 2 rows)
     lcd.begin(16, 2).unwrap();
-    
+
     // Set backlight to cyan
     lcd.set_rgb(0, 255, 255).unwrap();
-    
+
     // Print "Hello, ESP32!" on first line
     lcd.set_cursor(0, 0).unwrap();
     lcd.print("Hello, ESP32!").unwrap();
-    
+
     // Print "Grove LCD" on second line
     lcd.set_cursor(0, 1).unwrap();
     lcd.print("Grove LCD").unwrap();
-
 
     loop {
         info!("Opening relay");
@@ -94,6 +98,5 @@ fn main() -> ! {
         thermostat.turn_heat_on();
         t0 = Instant::now();
         while t0.elapsed() < Duration::from_millis(1000) {}
-
     }
 }
