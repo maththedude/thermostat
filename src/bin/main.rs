@@ -8,12 +8,7 @@
 
 use defmt::*;
 use esp_hal::{
-    i2c::master::{Config, I2c},
-    clock::CpuClock,
-    gpio::{Level, Output, OutputConfig},
-    main,
-    time::{Duration, Instant},
-    delay::Delay,
+    clock::CpuClock, delay::Delay, gpio::{Level, Output, OutputConfig}, i2c::master::{Config, I2c}, main, time::{Duration, Instant}
 };
 use thermostat::{OFF, ON, thermostat::*};
 use {esp_backtrace as _, esp_println as _};
@@ -80,74 +75,25 @@ fn main() -> ! {
     // Print "Grove LCD" on second line
     lcd.set_cursor(0, 1).unwrap();
     lcd.print("Grove LCD").unwrap();
-    
-    let mut counter = 0u32;
-    
+
+
     loop {
-        // Update counter on second line
-        lcd.set_cursor(0, 1).unwrap();
-        
-        // Format counter as string (simple approach for no_std)
-        let mut buffer = [0u8; 16];
-        let mut pos = 0;
-        let mut n = counter;
-        
-        if n == 0 {
-            buffer[pos] = b'0';
-            pos += 1;
-        } else {
-            let mut divisor = 1_000_000_000;
-            let mut started = false;
-            
-            while divisor > 0 {
-                let digit = (n / divisor) as u8;
-                if digit > 0 || started {
-                    buffer[pos] = b'0' + digit;
-                    pos += 1;
-                    started = true;
-                }
-                n %= divisor;
-                divisor /= 10;
-            }
-        }
-        
-        // Print counter
-        for i in 0..pos {
-            lcd.write(buffer[i]).unwrap();
-        }
-        
-        // Clear rest of line
-        for _ in pos..16 {
-            lcd.write(b' ').unwrap();
-        }
-        
-        // Change backlight color based on counter
-        let phase = (counter / 10) % 6;
-        match phase {
-            0 => lcd.set_rgb(255, 0, 0).unwrap(),     // Red
-            1 => lcd.set_rgb(255, 255, 0).unwrap(),   // Yellow
-            2 => lcd.set_rgb(0, 255, 0).unwrap(),     // Green
-            3 => lcd.set_rgb(0, 255, 255).unwrap(),   // Cyan
-            4 => lcd.set_rgb(0, 0, 255).unwrap(),     // Blue
-            5 => lcd.set_rgb(255, 0, 255).unwrap(),   // Magenta
-            _ => {}
-        }
-        
-        counter += 1;
-        delay.delay_millis(100);
+        info!("Opening relay");
+        lcd.clear().unwrap();
+        lcd.set_cursor(0, 0).unwrap();
+        lcd.print("Opening relay").unwrap();
+
+        thermostat.turn_heat_off();
+        let mut t0 = Instant::now();
+        while t0.elapsed() < Duration::from_millis(1000) {}
+
+        info!("Closing relay");
+        lcd.clear().unwrap();
+        lcd.set_cursor(0, 0).unwrap();
+        lcd.print("Closing relay").unwrap();
+        thermostat.turn_heat_on();
+        t0 = Instant::now();
+        while t0.elapsed() < Duration::from_millis(1000) {}
+
     }
-
-
-    // loop {
-    //     info!("Opening relay");
-    //     thermostat.turn_heat_off();
-    //     let mut t0 = Instant::now();
-    //     while t0.elapsed() < Duration::from_millis(1000) {}
-
-    //     info!("Closing relay");
-    //     thermostat.turn_heat_on();
-    //     t0 = Instant::now();
-    //     while t0.elapsed() < Duration::from_millis(1000) {}
-
-    // }
 }
