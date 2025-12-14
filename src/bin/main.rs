@@ -6,7 +6,8 @@
     holding buffers for the duration of a data transfer."
 )]
 
-use defmt::*;
+use defmt::info;
+use embedded_sht3x::{DEFAULT_I2C_ADDRESS, Repeatability, Sht3x};
 use esp_hal::{
     clock::CpuClock,
     delay::Delay,
@@ -15,6 +16,12 @@ use esp_hal::{
     main,
     time::{Duration, Instant},
 };
+
+use embedded_hal_bus::i2c::RefCellDevice;
+use esp_println::println;
+use core::{cell::RefCell, fmt::Write};
+use heapless::String;
+
 use grove_lcd_rgb::GroveLcd;
 use thermostat::{OFF, ON, thermostat::*};
 use {esp_backtrace as _, esp_println as _};
@@ -32,7 +39,8 @@ fn main() -> ! {
     // Init peripherals
     let config = esp_hal::Config::default().with_cpu_clock(CpuClock::max());
     let peripherals = esp_hal::init(config);
-    let delay = Delay::new();
+    let delay_lcd = Delay::new();
+    let delay_temp = Delay::new();
 
     // Heap allocation
     esp_alloc::heap_allocator!(#[esp_hal::ram(reclaimed)] size: 65536);
@@ -58,28 +66,36 @@ fn main() -> ! {
     let scl = peripherals.GPIO7;
 
     // Create I2C peripheral
-    // Adjust pin numbers based on your wiring
     let i2c = I2c::new(peripherals.I2C0, Config::default())
         .unwrap()
-        .with_sda(sda) // SDA
-        .with_scl(scl); // SCL
+        .with_sda(sda)
+        .with_scl(scl);
+
+    // Wrap the I2C bus in RefCell for sharing
+    let i2c_bus = RefCell::new(i2c);
+
+    // Create shared devices for each peripheral
+    let lcd_i2c = RefCellDevice::new(&i2c_bus);
+    let i2c_temp = RefCellDevice::new(&i2c_bus);
 
     // Create LCD instance
-    let mut lcd = GroveLcd::new(i2c, delay);
+    let mut lcd = GroveLcd::new(lcd_i2c, delay_lcd);
 
     // Initialize the LCD (16 columns, 2 rows)
     lcd.begin(16, 2).unwrap();
 
-    // Set backlight to cyan
+    // Set lcd backlight to cyan
     lcd.set_rgb(0, 255, 255).unwrap();
 
-    // Print "Hello, ESP32!" on first line
-    lcd.set_cursor(0, 0).unwrap();
-    lcd.print("Hello, ESP32!").unwrap();
-
-    // Print "Grove LCD" on second line
-    lcd.set_cursor(0, 1).unwrap();
-    lcd.print("Grove LCD").unwrap();
+    // Initialize the SHT-31 sensor
+    let mut sensor = Sht3x::new(i2c_temp, DEFAULT_I2C_ADDRESS, delay_temp);
+    
+    // Set measurement repeatability to High for best accuracy
+    sensor.repeatability = Repeatability::High;
+    
+    println!("SHT-31 sensor initialized successfully!");
+    println!("Repeatability: High (best accuracy)");
+    println!("I2C Address: 0x{:02X}\n", DEFAULT_I2C_ADDRESS);
 
     loop {
         info!("Opening relay");
@@ -87,12 +103,33 @@ fn main() -> ! {
         lcd.set_cursor(0, 0).unwrap();
         lcd.print("Opening relay").unwrap();
 
+        match sensor.single_measurement() {
+            Ok(measurement) => {
+                // Display temperature and humidity
+                esp_println::println!("  Temperature: {:.2} °C ({:.2} °F)", 
+                    measurement.temperature, 
+                    measurement.temperature * 9.0 / 5.0 + 32.0
+                );
+                esp_println::println!("  Humidity:    {:.2} %\n", measurement.humidity);
+                let temp_f = measurement.temperature * 9.0 / 5.0 + 32.0;
+                let humidity = measurement.humidity;
+                
+                // First line: Temperature
+                lcd.set_cursor(0, 1).unwrap();
+                let mut line1 = String::<16>::new();
+                write!(line1, "T:{:.1}F", temp_f).ok();
+                lcd.print(line1.as_str()).unwrap();
+            }
+            Err(e) => {
+                esp_println::println!("Error reading sensor: {:?}\n", e);
+            }
+        }
+
         thermostat.turn_heat_off();
         let mut t0 = Instant::now();
         while t0.elapsed() < Duration::from_millis(1000) {}
 
         info!("Closing relay");
-        lcd.clear().unwrap();
         lcd.set_cursor(0, 0).unwrap();
         lcd.print("Closing relay").unwrap();
         thermostat.turn_heat_on();
