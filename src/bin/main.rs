@@ -23,7 +23,7 @@ use esp_println::println;
 use heapless::String;
 
 use grove_lcd_rgb::GroveLcd;
-use thermostat::{OFF, ON, thermostat::*};
+use thermostat::{OFF, ON, sensor, thermostat::*};
 use {esp_backtrace as _, esp_println as _};
 
 extern crate alloc;
@@ -34,8 +34,6 @@ esp_bootloader_esp_idf::esp_app_desc!();
 
 #[main]
 fn main() -> ! {
-    info!("start");
-
     // Init peripherals
     let config = esp_hal::Config::default().with_cpu_clock(CpuClock::max());
     let peripherals = esp_hal::init(config);
@@ -48,24 +46,25 @@ fn main() -> ! {
 
     let mut thermostat = Thermostat {
         heat: OFF,
-        cool: OFF,
+        ac: OFF,
         fan: OFF,
         fan_mode: FanMode::Off,
-        temp: 70,
+        temp: 70.0,
+        _humidity: 40.0,
         set_point_low: 70,
         set_point_high: 70,
         mode: Mode::Off,
         backlight: ON,
         backlight_since: Instant::now(),
         heat_pin: Output::new(peripherals.GPIO8, Level::Low, OutputConfig::default()),
-        cool_pin: Output::new(peripherals.GPIO3, Level::Low, OutputConfig::default()),
+        ac_pin: Output::new(peripherals.GPIO3, Level::Low, OutputConfig::default()),
         fan_pin: Output::new(peripherals.GPIO2, Level::Low, OutputConfig::default()),
     };
 
+    // Create I2C peripheral
     let sda = peripherals.GPIO6;
     let scl = peripherals.GPIO7;
 
-    // Create I2C peripheral
     let i2c = I2c::new(peripherals.I2C0, Config::default())
         .unwrap()
         .with_sda(sda)
@@ -84,8 +83,8 @@ fn main() -> ! {
     // Initialize the LCD (16 columns, 2 rows)
     lcd.begin(16, 2).unwrap();
 
-    // Set lcd backlight to cyan
-    lcd.set_rgb(0, 255, 255).unwrap();
+    // Set lcd backlight to white
+    lcd.set_rgb(255, 255, 255).unwrap();
 
     // Initialize the SHT-31 sensor
     let mut sensor = Sht3x::new(i2c_temp, DEFAULT_I2C_ADDRESS, delay_temp);
@@ -98,33 +97,24 @@ fn main() -> ! {
     println!("I2C Address: 0x{:02X}\n", DEFAULT_I2C_ADDRESS);
 
     loop {
-        info!("Opening relay");
-        lcd.clear().unwrap();
-        lcd.set_cursor(0, 0).unwrap();
-        lcd.print("Opening relay").unwrap();
-
-        match sensor.single_measurement() {
-            Ok(measurement) => {
-                // Display temperature and humidity
-                esp_println::println!(
-                    "  Temperature: {:.2} °C ({:.2} °F)",
-                    measurement.temperature,
-                    measurement.temperature * 9.0 / 5.0 + 32.0
-                );
-                esp_println::println!("  Humidity:    {:.2} %\n", measurement.humidity);
-                let temp_f = measurement.temperature * 9.0 / 5.0 + 32.0;
-                let _humidity = measurement.humidity;
-
-                // First line: Temperature
-                lcd.set_cursor(0, 1).unwrap();
-                let mut line1 = String::<16>::new();
-                write!(line1, "T:{:.1}F", temp_f).ok();
-                lcd.print(line1.as_str()).unwrap();
-            }
-            Err(e) => {
-                esp_println::println!("Error reading sensor: {:?}\n", e);
-            }
+        // Read buttons (if you don't do interrupts)
+        // Change user-defined settings (if you don't do interrupts)
+        
+        // Read temperature and humidity
+        if let Err(_) = sensor::read_and_update_sensor(&mut sensor, &mut thermostat, &mut lcd) {
+            esp_println::println!("Warning: Unable to read sensor data after retries");
+            lcd.clear().unwrap();
+            lcd.set_cursor(0, 0).unwrap();
+            lcd.print("Sensor Error").unwrap();
+            continue;
         }
+        // Update displayed temperature
+        lcd.set_cursor(0, 1).unwrap();
+        let mut line1 = String::<16>::new();
+        write!(line1, "T:{:.1}F", thermostat.temp).unwrap();
+        lcd.print(line1.as_str()).unwrap();
+
+        // Change relay states if needed
 
         thermostat.turn_heat_off();
         let mut t0 = Instant::now();
