@@ -1,9 +1,5 @@
-use core::fmt::Write;
-use embedded_sht3x::Sht3x;
-use grove_lcd_rgb::GroveLcd;
-use heapless::String;
-
 use crate::thermostat;
+use embedded_sht3x::Sht3x;
 
 const MAX_RETRIES: u8 = 3;
 
@@ -21,7 +17,6 @@ const MAX_RETRIES: u8 = 3;
 pub fn read_and_update_sensor<I2C, D>(
     sensor: &mut Sht3x<I2C, D>,
     thermostat: &mut thermostat::Thermostat,
-    lcd: &mut GroveLcd<I2C, D>,
 ) -> Result<(), ()>
 where
     I2C: embedded_hal::i2c::I2c,
@@ -45,20 +40,6 @@ where
                 // Update thermostat state
                 thermostat.temp = temp_f;
                 thermostat._humidity = humidity;
-
-                // Display on LCD - First line: Temperature
-                if let Err(e) = lcd.set_cursor(0, 1) {
-                    esp_println::println!("LCD cursor error: {:?}", e);
-                    return Err(());
-                }
-
-                let mut line1 = String::<16>::new();
-                write!(line1, "T:{:.1}F", temp_f).ok();
-                
-                if let Err(e) = lcd.print(line1.as_str()) {
-                    esp_println::println!("LCD print error: {:?}", e);
-                    return Err(());
-                }
 
                 return Ok(());
             }

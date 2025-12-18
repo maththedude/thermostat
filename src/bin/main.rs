@@ -48,7 +48,7 @@ fn main() -> ! {
         heat: OFF,
         ac: OFF,
         fan: OFF,
-        fan_mode: FanMode::Off,
+        fan_mode: FanMode::On,
         temp: 70.0,
         _humidity: 40.0,
         set_point_low: 70,
@@ -59,6 +59,7 @@ fn main() -> ! {
         heat_pin: Output::new(peripherals.GPIO8, Level::Low, OutputConfig::default()),
         ac_pin: Output::new(peripherals.GPIO3, Level::Low, OutputConfig::default()),
         fan_pin: Output::new(peripherals.GPIO2, Level::Low, OutputConfig::default()),
+        hysteresis: 0.9,
     };
 
     // Create I2C peripheral
@@ -97,34 +98,26 @@ fn main() -> ! {
     println!("I2C Address: 0x{:02X}\n", DEFAULT_I2C_ADDRESS);
 
     loop {
-        // Read buttons (if you don't do interrupts)
-        // Change user-defined settings (if you don't do interrupts)
-        
+        // TODO: Read buttons (if you don't do interrupts)
+
         // Read temperature and humidity
-        if let Err(_) = sensor::read_and_update_sensor(&mut sensor, &mut thermostat, &mut lcd) {
+        if let Err(_) = sensor::read_and_update_sensor(&mut sensor, &mut thermostat) {
             esp_println::println!("Warning: Unable to read sensor data after retries");
             lcd.clear().unwrap();
             lcd.set_cursor(0, 0).unwrap();
             lcd.print("Sensor Error").unwrap();
             continue;
         }
-        // Update displayed temperature
-        lcd.set_cursor(0, 1).unwrap();
-        let mut line1 = String::<16>::new();
-        write!(line1, "T:{:.1}F", thermostat.temp).unwrap();
-        lcd.print(line1.as_str()).unwrap();
 
-        // Change relay states if needed
+        // Determine heating/cooling requirements based on mode
+        thermostat.determine_hvac_action();
 
-        thermostat.turn_heat_off();
-        let mut t0 = Instant::now();
-        while t0.elapsed() < Duration::from_millis(1000) {}
+        // Control fan based on fan mode and HVAC state
+        thermostat.control_fan();
 
-        info!("Closing relay");
-        lcd.set_cursor(0, 0).unwrap();
-        lcd.print("Closing relay").unwrap();
-        thermostat.turn_heat_on();
-        t0 = Instant::now();
-        while t0.elapsed() < Duration::from_millis(1000) {}
+        // Apply hardware states with safety checks
+        thermostat.apply_hardware_states();
+
+        // TODO: Update LCD
     }
 }

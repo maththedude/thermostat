@@ -17,6 +17,7 @@ pub struct Thermostat<'a> {
     pub heat_pin: Output<'a>,
     pub ac_pin: Output<'a>,
     pub fan_pin: Output<'a>,
+    pub hysteresis: f32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -30,43 +31,165 @@ pub enum Mode {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FanMode {
-    Off,
     On,
     Auto,
 }
 
 impl<'a> Thermostat<'a> {
-    pub fn turn_heat_on(&mut self) {
+    fn turn_heat_on(&mut self) {
         set_relay_state(&mut self.heat_pin, ON);
     }
-}
 
-impl<'a> Thermostat<'a> {
-    pub fn turn_heat_off(&mut self) {
+    fn turn_heat_off(&mut self) {
         set_relay_state(&mut self.heat_pin, OFF);
     }
-}
 
-impl<'a> Thermostat<'a> {
-    pub fn turn_ac_on(&mut self) {
+    fn turn_ac_on(&mut self) {
         set_relay_state(&mut self.ac_pin, ON);
     }
-}
 
-impl<'a> Thermostat<'a> {
-    pub fn turn_ac_off(&mut self) {
+    fn turn_ac_off(&mut self) {
         set_relay_state(&mut self.ac_pin, OFF);
     }
-}
 
-impl<'a> Thermostat<'a> {
-    pub fn turn_fan_on(&mut self) {
-        set_relay_state(&mut self.heat_pin, ON);
+    fn turn_fan_on(&mut self) {
+        set_relay_state(&mut self.fan_pin, ON);
     }
-}
 
-impl<'a> Thermostat<'a> {
-    pub fn turn_fan_off(&mut self) {
-        set_relay_state(&mut self.heat_pin, OFF);
+    fn turn_fan_off(&mut self) {
+        set_relay_state(&mut self.fan_pin, OFF);
+    }
+
+    /// Determine what HVAC action is needed based on temperature and mode
+    pub fn determine_hvac_action(&mut self) {
+        match self.mode {
+            Mode::Off => {
+                self.heat = OFF;
+                self.ac = OFF;
+            }
+
+            Mode::Heat => {
+                // Use set_point_low as the target
+                let target = self.set_point_low as f32;
+
+                if self.temp < (target - self.hysteresis) {
+                    self.heat = ON;
+                    self.ac = OFF;
+                } else if self.temp > (target + self.hysteresis) {
+                    self.heat = OFF;
+                    self.ac = OFF;
+                }
+                // else maintain current state (within hysteresis band)
+            }
+
+            Mode::Cool => {
+                // Use set_point_high as the target
+                let target = self.set_point_high as f32;
+
+                if self.temp > (target + self.hysteresis) {
+                    self.ac = ON;
+                    self.heat = OFF;
+                } else if self.temp < (target - self.hysteresis) {
+                    self.ac = OFF;
+                    self.heat = OFF;
+                }
+                // else maintain current state (within hysteresis band)
+            }
+
+            Mode::Hold => {
+                // Hold a specific temperature (set_point_high = set_point_low)
+                // Use both heating and cooling to maintain exact temperature
+                let target_low = self.set_point_low as f32;
+                let target_high = self.set_point_high as f32;
+
+                if self.temp < (target_low - self.hysteresis) {
+                    self.heat = ON;
+                    self.ac = OFF;
+                } else if self.temp > (target_high + self.hysteresis) {
+                    self.ac = ON;
+                    self.heat = OFF;
+                } else if self.temp >= (target_low - self.hysteresis)
+                    && self.temp <= (target_high + self.hysteresis)
+                {
+                    self.heat = OFF;
+                    self.ac = OFF;
+                }
+                // else maintain current state
+            }
+
+            Mode::Range => {
+                // Maintain temperature within a range [set_point_low, set_point_high]
+                let target_low = self.set_point_low as f32;
+                let target_high = self.set_point_high as f32;
+
+                if self.temp < (target_low - self.hysteresis) {
+                    self.heat = ON;
+                    self.ac = OFF;
+                } else if self.temp > (target_high + self.hysteresis) {
+                    self.ac = ON;
+                    self.heat = OFF;
+                } else if self.temp >= target_low && self.temp <= target_high {
+                    // Within acceptable range - turn both off
+                    self.heat = OFF;
+                    self.ac = OFF;
+                }
+                // else maintain current state (within hysteresis band)
+            }
+        }
+    }
+
+    /// Control fan based on mode and HVAC state
+    pub fn control_fan(&mut self) {
+        match self.fan_mode {
+            FanMode::On => {
+                // Fan always on regardless of heating/cooling
+                self.fan = ON;
+            }
+            FanMode::Auto => {
+                // Fan on only when heating or cooling
+                if self.heat == ON || self.ac == ON {
+                    self.fan = ON;
+                } else {
+                    self.fan = OFF;
+                }
+            }
+        }
+    }
+
+    /// Apply hardware states with safety checks
+    pub fn apply_hardware_states(&mut self) {
+        // Safety Check 1: Never run furnace and AC simultaneously
+        if self.heat == ON && self.ac == ON {
+            // Error condition - turn both off and log error
+            self.heat = OFF;
+            self.ac = OFF;
+            esp_println::println!("ERROR: Attempted to run furnace and AC simultaneously");
+        }
+
+        // Safety Check 2: Never run furnace or AC without the fan
+        if (self.heat == ON || self.ac == ON) && self.fan == OFF {
+            // Force fan on when HVAC is running
+            self.fan = ON;
+            esp_println::println!("WARNING: Fan was off while HVAC active - forcing fan on");
+        }
+
+        // Apply states to actual hardware
+        if self.heat == ON {
+            self.turn_heat_on();
+        } else {
+            self.turn_heat_off();
+        }
+
+        if self.ac == ON {
+            self.turn_ac_on();
+        } else {
+            self.turn_ac_off();
+        }
+
+        if self.fan == ON {
+            self.turn_fan_on();
+        } else {
+            self.turn_fan_off();
+        }
     }
 }
