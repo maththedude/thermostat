@@ -9,8 +9,7 @@ pub struct Thermostat<'a> {
     pub fan_mode: FanMode,
     pub temp: f32,
     pub _humidity: f32, // for future smart home upgrades, or a future ac with built-in humidifier
-    pub set_point_low: i16,
-    pub set_point_high: i16,
+    pub set_point: i16,
     pub mode: Mode,
     pub backlight: bool,
     pub backlight_since: Instant,
@@ -26,7 +25,6 @@ pub enum Mode {
     Heat,
     Cool,
     Hold,
-    Range,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -69,8 +67,7 @@ impl<'a> Thermostat<'a> {
             }
 
             Mode::Heat => {
-                // Use set_point_low as the target
-                let target = self.set_point_low as f32;
+                let target = self.set_point as f32;
 
                 if self.temp < (target - self.hysteresis) {
                     self.heat = ON;
@@ -83,8 +80,7 @@ impl<'a> Thermostat<'a> {
             }
 
             Mode::Cool => {
-                // Use set_point_high as the target
-                let target = self.set_point_high as f32;
+                let target = self.set_point as f32;
 
                 if self.temp > (target + self.hysteresis) {
                     self.ac = ON;
@@ -97,43 +93,23 @@ impl<'a> Thermostat<'a> {
             }
 
             Mode::Hold => {
-                // Hold a specific temperature (set_point_high = set_point_low)
+                // Hold a specific temperature
                 // Use both heating and cooling to maintain exact temperature
-                let target_low = self.set_point_low as f32;
-                let target_high = self.set_point_high as f32;
+                let target = self.set_point as f32;
 
-                if self.temp < (target_low - self.hysteresis) {
+                if self.temp < (target - self.hysteresis) {
                     self.heat = ON;
                     self.ac = OFF;
-                } else if self.temp > (target_high + self.hysteresis) {
+                } else if self.temp > (target + self.hysteresis) {
                     self.ac = ON;
                     self.heat = OFF;
-                } else if self.temp >= (target_low - self.hysteresis)
-                    && self.temp <= (target_high + self.hysteresis)
+                } else if self.temp >= (target - self.hysteresis)
+                    && self.temp <= (target + self.hysteresis)
                 {
                     self.heat = OFF;
                     self.ac = OFF;
                 }
                 // else maintain current state
-            }
-
-            Mode::Range => {
-                // Maintain temperature within a range [set_point_low, set_point_high]
-                let target_low = self.set_point_low as f32;
-                let target_high = self.set_point_high as f32;
-
-                if self.temp < (target_low - self.hysteresis) {
-                    self.heat = ON;
-                    self.ac = OFF;
-                } else if self.temp > (target_high + self.hysteresis) {
-                    self.ac = ON;
-                    self.heat = OFF;
-                } else if self.temp >= target_low && self.temp <= target_high {
-                    // Within acceptable range - turn both off
-                    self.heat = OFF;
-                    self.ac = OFF;
-                }
-                // else maintain current state (within hysteresis band)
             }
         }
     }
